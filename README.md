@@ -22,6 +22,21 @@ PASS/FAIL summary:
 
 Full results and findings: [VERIFY.md](VERIFY.md).
 
+## Large-scale stress (1M / 10M / 100M)
+
+`stress/` drives log4go at 1M / 10M / 100M record volumes against a per-tier
+async FileWriter and records wall time / QPS, log4go metrics (Written / Dropped
+/ Spilled / Errored), process memory (sampled every 100k records), and file /
+disk usage. The report is written to `STRESS.md`.
+
+```bash
+make stress          # 1M + 10M + 100M file tiers (no Kafka)
+make stress-kafka    # also run the small (10k) Kafka tier
+go run ./stress -tiers 1M,10M   # subset
+```
+
+Stress results and the log4go sharp-edges it surfaced: [STRESS.md](STRESS.md).
+
 ## Quick start
 
 ```bash
@@ -32,13 +47,16 @@ make verify
 make run-no-kafka
 ```
 
-Requirements: Go 1.26+, Docker (for the Kafka section only).
+Requirements: Go 1.26+, Docker (for the Kafka section only). The stress run
+needs ~8 GB transient free disk for the 100M tier (temp files are deleted per
+tier).
 
 ## Layout
 
 - `main.go` — the verifier.
+- `stress/` — the large-scale stress harness (writes `STRESS.md`).
 - `docker-compose.yml` — single-node Kafka (KRaft) on :9092.
-- `Makefile` — `kafka-up/down/ready`, `run`, `run-no-kafka`, `verify`, `clean`.
+- `Makefile` — `kafka-up/down/ready`, `run`, `run-no-kafka`, `verify`, `stress`, `clean`.
 
 The `go.mod` uses `replace github.com/v8fg/kit4go => ../kit4go`, so clone
 `v8fg/kit4go` as a sibling directory for the harness to resolve.

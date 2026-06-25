@@ -16,7 +16,7 @@ BROKERS    ?= localhost:9092
 GOFLAGS    ?=
 BIN        := kit4go-verify
 
-.PHONY: kafka-up kafka-down kafka-ready run run-no-kafka verify clean build fmt vet
+.PHONY: kafka-up kafka-down kafka-ready run run-no-kafka verify clean build fmt vet stress stress-kafka
 
 build:
 	go build $(GOFLAGS) -o $(BIN) .
@@ -58,3 +58,13 @@ fmt:
 
 vet:
 	go vet ./...
+
+# Large-scale stress (1M / 10M / 100M file tiers). Writes rotating temp files
+# under /tmp and deletes them per tier; checks free disk before running. Writes
+# the report to STRESS.md.
+stress:
+	go run ./stress -kafka-off
+
+# Stress including the small Kafka tier (needs `make kafka-up` first).
+stress-kafka: kafka-up kafka-ready
+	go run ./stress
