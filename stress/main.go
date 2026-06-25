@@ -118,7 +118,8 @@ type tierResult struct {
 
 const (
 	asyncBufSize     = 1 << 15 // 32k channel; absorbs bursts before drop
-	bufioSize        = 1 << 16 // 64k bufio; fewer flushes under load
+	bufioSize        = 1 << 16 // 64k bufio; fewer flushes under load (== log4go new default)
+	flushBatchSize   = 1000    // force a bufio flush every N records (crash-loss bound)
 	sampleEvery      = 100_000
 	kafkaSmallVolume = 10_000
 )
@@ -134,8 +135,14 @@ func main() {
 	fmt.Println("========================================================")
 	fmt.Printf("go: %s  CPUs: %d  path: per-tier 1-shard ShardLogger + 1 async FileWriter (drop policy)\n",
 		runtime.Version(), runtime.NumCPU())
-	fmt.Printf("config: bufio %dB, async channel %d, overflow=drop, sample every %d records\n",
-		bufioSize, asyncBufSize, sampleEvery)
+	fmt.Printf("config: bufio %dB, async channel %d, flush-batch %d records, overflow=drop, sample every %d records\n",
+		bufioSize, asyncBufSize, flushBatchSize, sampleEvery)
+	// Crash-loss bound: the worst-case data lost on a sudden process crash is
+	// at most flushBatchSize records (between forced flushes) PLUS bufioSize
+	// bytes of unflushed bufio buffer. The 500ms time ticker is the low-rate
+	// backstop. Reported here so the durability trade-off is explicit.
+	fmt.Printf("crash-loss bound: <= %d records + %dB (bufio) unflushed at any instant; 500ms ticker backstop\n",
+		flushBatchSize, bufioSize)
 
 	// Safety: refuse to run if free disk on the target volume is critically low.
 	const minFreeMB = 2048
@@ -197,6 +204,7 @@ func runFileTier(t tier) tierResult {
 		Rotate:          true,
 		Daily:           true,
 		BufferSize:      bufioSize,
+		FlushBatchSize:  flushBatchSize,
 		Async:           true,
 		AsyncBufferSize: asyncBufSize,
 		OverflowPolicy:  "drop",
@@ -495,8 +503,10 @@ func writeReport(results []tierResult) {
 	fmt.Fprintf(&b, "- host CPUs: %d\n", runtime.NumCPU())
 	fmt.Fprintf(&b, "- hostname: %s\n", host)
 	fmt.Fprintf(&b, "- run time: %s\n", time.Now().Format(time.RFC3339))
-	fmt.Fprintf(&b, "- configuration: per-tier independent 1-shard ShardLogger + 1 async FileWriter (drop policy); bufio %dB; async channel %d\n\n",
-		bufioSize, asyncBufSize)
+	fmt.Fprintf(&b, "- configuration: per-tier independent 1-shard ShardLogger + 1 async FileWriter (drop policy); bufio %dB; async channel %d; flush-batch %d records\n",
+		bufioSize, asyncBufSize, flushBatchSize)
+	fmt.Fprintf(&b, "- crash-loss bound: <= %d records + %dB (bufio) unflushed at any instant (the 500ms time ticker is the low-rate backstop)\n\n",
+		flushBatchSize, bufioSize)
 	fmt.Fprintf(&b, "> Each tier uses a fresh independent 1-shard logger (one bootstrap goroutine -> one FileWriter daemon): the only race-free high-QPS configuration. See the sharp-edge notes at the bottom.\n\n")
 	fmt.Fprintf(&b, "## per-tier results\n\n")
 	fmt.Fprintf(&b, "| tier | records | elapsed | QPS | written | dropped | spilled | errored | file | diskΔ | peakHeap | peakGoroutines | GCs |\n")
