@@ -1,0 +1,15 @@
+# built binary
+/kit4go-verify
+
+# local verification scratch
+*.log
+/tmp/
+
+# editor
+.idea/
+.vscode/
+.DS_Store
+
+# go
+*.test
+*.out

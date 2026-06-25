@@ -1,0 +1,44 @@
+# Single-node Kafka in KRaft mode (no ZooKeeper) for the kit4go-verify e2e run.
+# Uses Confluent's cp-kafka image (bitnami/kafka tags were unavailable at authoring
+# time). KRaft single-node: the broker is also the controller. Port 9092 is
+# exposed to the host so the verify binary (running on the host) can produce.
+#
+# Note: we format storage on first run via KAFKA_PROCESS_ROLES + a fixed cluster id.
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: kit4go-verify-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft single-node bootstrap.
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Storage formatting (idempotent): format if no meta.properties found.
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    command:
+      - bash
+      - -c
+      - |
+        # Format storage if needed (KRaft), then start.
+        if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+          kafka-storage format -t "$${CLUSTER_ID}" -c /etc/kafka/kafka.properties --ignore-streams
+        fi
+        /etc/confluent/docker/run
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
